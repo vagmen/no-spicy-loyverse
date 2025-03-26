@@ -9,12 +9,19 @@ interface LoyverseReceipt {
   receipt_number: string;
   line_items: Array<{
     item_name: string;
+    variant_name: string | null;
     category: string;
     quantity: number;
-    total_price: number;
+    price: number;
+    total_money: {
+      amount: number;
+    };
+    total_discount: number;
+    sku: string;
   }>;
   payments: Array<{
     type: string;
+    name: string;
   }>;
   employee_name?: string;
   customer_phone_number?: string;
@@ -23,10 +30,13 @@ interface LoyverseReceipt {
 interface SheetRow {
   "Дата и время": string;
   "ID чека": string;
+  Артикул: string;
   Товар: string;
   Категория: string;
   "Кол-во": number;
-  Сумма: number;
+  "Цена за ед.": number;
+  "Сумма со скидкой": number;
+  Скидка: number;
   "Способ оплаты": string;
   Сотрудник: string;
   Клиент: string;
@@ -92,6 +102,15 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
 
       const data = await response.json();
       const receipts = data.receipts as LoyverseReceipt[];
+
+      // Добавляем отладочный вывод для первого чека на первой странице
+      if (pageCount === 1 && receipts.length > 0) {
+        console.log("\nПример данных первого чека:");
+        console.log(JSON.stringify(receipts[0], null, 2));
+        console.log("\nПример первой позиции:");
+        console.log(JSON.stringify(receipts[0].line_items[0], null, 2));
+      }
+
       cursor = data.cursor;
 
       console.log(`Получено ${receipts.length} чеков на странице ${pageCount}`);
@@ -126,7 +145,7 @@ async function updateSheet(salesData: LoyverseReceipt[]) {
       (sum, receipt) =>
         sum +
         receipt.line_items.reduce(
-          (itemSum, item) => itemSum + item.total_price,
+          (itemSum, item) => itemSum + item.total_money.amount,
           0
         ),
       0
@@ -148,14 +167,22 @@ async function updateSheet(salesData: LoyverseReceipt[]) {
     const sheet = doc.sheetsByIndex[0];
     console.log("Лист:", sheet.title);
 
+    // Очищаем лист перед записью новых данных
+    console.log("Очищаем существующие данные...");
+    await sheet.clear();
+    console.log("Лист очищен");
+
     // Определяем заголовки столбцов
     const headers = [
       "Дата и время",
       "ID чека",
+      "Артикул",
       "Товар",
       "Категория",
       "Кол-во",
-      "Сумма",
+      "Цена за ед.",
+      "Сумма со скидкой",
+      "Скидка",
       "Способ оплаты",
       "Сотрудник",
       "Клиент",
@@ -169,11 +196,16 @@ async function updateSheet(salesData: LoyverseReceipt[]) {
       receipt.line_items.map((item) => ({
         "Дата и время": receipt.receipt_date,
         "ID чека": receipt.receipt_number,
-        Товар: item.item_name,
+        Артикул: item.sku,
+        Товар: item.variant_name
+          ? `${item.item_name} (${item.variant_name})`
+          : item.item_name,
         Категория: item.category || "Без категории",
         "Кол-во": item.quantity,
-        Сумма: item.total_price,
-        "Способ оплаты": receipt.payments.map((p) => p.type).join(", "),
+        "Цена за ед.": item.price,
+        "Сумма со скидкой": item.total_money.amount,
+        Скидка: item.total_discount,
+        "Способ оплаты": receipt.payments.map((p) => p.name).join(", "),
         Сотрудник: receipt.employee_name || "Не указан",
         Клиент: receipt.customer_phone_number || "-",
       }))

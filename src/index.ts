@@ -1,9 +1,6 @@
 require("dotenv").config();
 
-const {
-  GoogleSpreadsheet,
-  GoogleSpreadsheetWorksheet,
-} = require("google-spreadsheet");
+const { GoogleSpreadsheet } = require("google-spreadsheet");
 const { JWT } = require("google-auth-library");
 const fetch = require("node-fetch");
 
@@ -54,23 +51,61 @@ if (
 
 async function fetchSalesData(): Promise<LoyverseReceipt[]> {
   console.log("Начинаем получение данных из Loyverse API...");
-  console.log("API Key:", LOYVERSE_API_KEY ? "Присутствует" : "Отсутствует");
+
+  // Получаем даты для фильтрации
+  const now = new Date();
+  const lastMonth = new Date(now);
+  lastMonth.setMonth(now.getMonth() - 1);
+
+  // Форматируем даты в ISO формат
+  const startDate = lastMonth.toISOString();
+  const endDate = now.toISOString();
+
+  console.log("Период запроса:", { с: startDate, по: endDate });
+
+  let allReceipts: LoyverseReceipt[] = [];
+  let cursor: string | null = null;
+  let pageCount = 0;
 
   try {
-    const response = await fetch("https://api.loyverse.com/v1.0/receipts", {
-      headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
-    });
+    do {
+      pageCount++;
+      console.log(`Загрузка страницы ${pageCount}...`);
 
-    console.log("Статус ответа:", response.status);
-    console.log("Заголовки ответа:", response.headers);
+      const url = new URL("https://api.loyverse.com/v1.0/receipts");
+      url.searchParams.append("created_at_min", startDate);
+      url.searchParams.append("created_at_max", endDate);
+      url.searchParams.append("limit", "250"); // Максимальный размер страницы
+      if (cursor) {
+        url.searchParams.append("cursor", cursor);
+      }
 
-    if (!response.ok) {
-      throw new Error(`Ошибка API Loyverse: ${response.statusText}`);
-    }
+      const response = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
+      });
 
-    const data = (await response.json()) as { receipts: LoyverseReceipt[] };
-    console.log(`Получено ${data.receipts.length} чеков`);
-    return data.receipts;
+      console.log("Статус ответа:", response.status);
+
+      if (!response.ok) {
+        throw new Error(`Ошибка API Loyverse: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const receipts = data.receipts as LoyverseReceipt[];
+      cursor = data.cursor;
+
+      console.log(`Получено ${receipts.length} чеков на странице ${pageCount}`);
+      allReceipts = allReceipts.concat(receipts);
+
+      if (cursor) {
+        console.log("Есть ещё страницы, продолжаем загрузку...");
+      }
+    } while (cursor);
+
+    console.log(
+      `\nЗагрузка завершена. Всего получено ${allReceipts.length} чеков за ${pageCount} страниц`
+    );
+    return allReceipts;
   } catch (error) {
     console.error("Ошибка при запросе к API:", error);
     throw error;
@@ -78,26 +113,6 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
 }
 
 async function updateSheet(salesData: LoyverseReceipt[]) {
-  console.log("\nПример первого чека:");
-  if (salesData.length > 0) {
-    const firstReceipt = salesData[0];
-    console.log(
-      JSON.stringify(
-        {
-          date: firstReceipt.receipt_date,
-          number: firstReceipt.receipt_number,
-          items: firstReceipt.line_items,
-          total: firstReceipt.line_items.reduce(
-            (sum, item) => sum + item.total_price,
-            0
-          ),
-        },
-        null,
-        2
-      )
-    );
-  }
-
   console.log("\nСтатистика:");
   console.log(`Всего чеков: ${salesData.length}`);
   console.log(

@@ -2,7 +2,7 @@ name: Hourly Data Update
 
 on:
   schedule:
-    - cron: "0 * * * *" # Каждый час в :00 минут
+    - cron: "*/10 * * * *" # Каждые 10 минут
   workflow_dispatch: # Для ручного запуска
 
 jobs:

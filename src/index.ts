@@ -195,6 +195,9 @@ export default async function handler(req: any, res: any) {
   }
 }
 
+// Экспортируем main для использования в API endpoint
+export { main };
+
 // Запускаем main() если скрипт запущен напрямую
 if (require.main === module) {
   main().catch(console.error);

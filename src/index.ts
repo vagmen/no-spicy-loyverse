@@ -185,16 +185,6 @@ async function main() {
   }
 }
 
-// Для Vercel Serverless Function
-export default async function handler(req: any, res: any) {
-  try {
-    await main();
-    res.status(200).json({ message: "Данные успешно обновлены" });
-  } catch (error) {
-    res.status(500).json({ error: "Ошибка при обновлении данных" });
-  }
-}
-
 // Экспортируем main для использования в API endpoint
 export { main };
 

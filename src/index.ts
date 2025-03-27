@@ -8,6 +8,7 @@ interface LoyverseReceipt {
   receipt_date: string;
   receipt_number: string;
   line_items: Array<{
+    item_id: string;
     item_name: string;
     variant_name: string | null;
     category: string;
@@ -43,6 +44,17 @@ interface SheetRow {
   [key: string]: string | number;
 }
 
+interface LoyverseItem {
+  id: string;
+  name: string;
+  category_id: string;
+}
+
+interface LoyverseCategory {
+  id: string;
+  name: string;
+}
+
 const SHEET_ID = process.env.SHEET_ID;
 const LOYVERSE_API_KEY = process.env.LOYVERSE_API_KEY;
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -59,8 +71,64 @@ if (
   );
 }
 
+async function fetchItemsAndCategories() {
+  console.log("Получаем информацию о товарах и категориях...");
+
+  // Получаем категории
+  const categoriesResponse = await fetch(
+    "https://api.loyverse.com/v1.0/categories",
+    {
+      headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
+    }
+  );
+
+  if (!categoriesResponse.ok) {
+    throw new Error(
+      `Ошибка получения категорий: ${categoriesResponse.statusText}`
+    );
+  }
+
+  const categoriesData = await categoriesResponse.json();
+  const categories = new Map<string, string>();
+  categoriesData.categories.forEach((category: LoyverseCategory) => {
+    categories.set(category.id, category.name);
+  });
+
+  // Получаем товары
+  const items = new Map<string, string>();
+  let cursor: string | null = null;
+
+  do {
+    const url = new URL("https://api.loyverse.com/v1.0/items");
+    if (cursor) {
+      url.searchParams.append("cursor", cursor);
+    }
+
+    const itemsResponse = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
+    });
+
+    if (!itemsResponse.ok) {
+      throw new Error(`Ошибка получения товаров: ${itemsResponse.statusText}`);
+    }
+
+    const itemsData = await itemsResponse.json();
+    itemsData.items.forEach((item: LoyverseItem) => {
+      const categoryName = categories.get(item.category_id) || "Без категории";
+      items.set(item.id, categoryName);
+    });
+
+    cursor = itemsData.cursor;
+  } while (cursor);
+
+  return items;
+}
+
 async function fetchSalesData(): Promise<LoyverseReceipt[]> {
   console.log("Начинаем получение данных из Loyverse API...");
+
+  // Получаем информацию о товарах и их категориях
+  const itemCategories = await fetchItemsAndCategories();
 
   // Получаем даты для фильтрации
   const now = new Date();
@@ -103,12 +171,22 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
       const data = await response.json();
       const receipts = data.receipts as LoyverseReceipt[];
 
+      // Добавляем категории к чекам
+      receipts.forEach((receipt) => {
+        receipt.line_items.forEach((item) => {
+          item.category = itemCategories.get(item.item_id) || "Без категории";
+        });
+      });
+
       // Добавляем отладочный вывод для первого чека на первой странице
       if (pageCount === 1 && receipts.length > 0) {
         console.log("\nПример данных первого чека:");
         console.log(JSON.stringify(receipts[0], null, 2));
         console.log("\nПример первой позиции:");
         console.log(JSON.stringify(receipts[0].line_items[0], null, 2));
+        console.log("\nПроверка поля категории:");
+        console.log("Category field:", receipts[0].line_items[0].category);
+        console.log("Full item data:", receipts[0].line_items[0]);
       }
 
       cursor = data.cursor;

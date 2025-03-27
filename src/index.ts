@@ -193,22 +193,25 @@ async function updateSheet(salesData: LoyverseReceipt[]) {
     console.log("Заголовки установлены");
 
     const rows: SheetRow[] = salesData.flatMap((receipt) =>
-      receipt.line_items.map((item) => ({
-        "Дата и время": receipt.receipt_date,
-        "ID чека": receipt.receipt_number,
-        Артикул: item.sku,
-        Товар: item.variant_name
-          ? `${item.item_name} (${item.variant_name})`
-          : item.item_name,
-        Категория: item.category || "Без категории",
-        "Кол-во": item.quantity,
-        "Цена за ед.": item.price,
-        "Сумма со скидкой": item.total_money.amount,
-        Скидка: item.total_discount,
-        "Способ оплаты": receipt.payments.map((p) => p.name).join(", "),
-        Сотрудник: receipt.employee_name || "Не указан",
-        Клиент: receipt.customer_phone_number || "-",
-      }))
+      receipt.line_items.map((item) => {
+        const totalBeforeDiscount = item.quantity * item.price;
+        return {
+          "Дата и время": receipt.receipt_date,
+          "ID чека": receipt.receipt_number,
+          Артикул: item.sku,
+          Товар: item.variant_name
+            ? `${item.item_name} (${item.variant_name})`
+            : item.item_name,
+          Категория: item.category || "Без категории",
+          "Кол-во": item.quantity,
+          "Цена за ед.": item.price,
+          "Сумма со скидкой": totalBeforeDiscount - item.total_discount,
+          Скидка: item.total_discount,
+          "Способ оплаты": receipt.payments.map((p) => p.name).join(", "),
+          Сотрудник: receipt.employee_name || "Не указан",
+          Клиент: receipt.customer_phone_number || "-",
+        };
+      })
     );
 
     console.log(`Подготовлено ${rows.length} строк для записи`);

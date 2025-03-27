@@ -3,6 +3,7 @@ require("dotenv").config();
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const { JWT } = require("google-auth-library");
 const fetch = require("node-fetch");
+import { fetchInventoryData, updateInventorySheet } from "./inventory";
 
 interface LoyverseReceipt {
   receipt_date: string;
@@ -209,7 +210,10 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
   }
 }
 
-async function updateSheet(salesData: LoyverseReceipt[]) {
+async function updateSheet(
+  doc: typeof GoogleSpreadsheet,
+  salesData: LoyverseReceipt[]
+) {
   console.log("\nСтатистика:");
   console.log(`Всего чеков: ${salesData.length}`);
   console.log(
@@ -232,16 +236,6 @@ async function updateSheet(salesData: LoyverseReceipt[]) {
 
   console.log("\nНачинаем запись в Google Sheets...");
   try {
-    const serviceAccountAuth = new JWT({
-      email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      key: (GOOGLE_PRIVATE_KEY as string).replace(/\\n/g, "\n"),
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-
-    const doc = new GoogleSpreadsheet(SHEET_ID as string, serviceAccountAuth);
-    await doc.loadInfo();
-    console.log("Таблица загружена:", doc.title);
-
     const sheet = doc.sheetsByIndex[0];
     console.log("Лист:", sheet.title);
 
@@ -304,8 +298,26 @@ async function updateSheet(salesData: LoyverseReceipt[]) {
 async function main() {
   try {
     console.log("Запуск скрипта...");
+
+    // Инициализируем подключение к Google Sheets
+    const serviceAccountAuth = new JWT({
+      email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: (GOOGLE_PRIVATE_KEY as string).replace(/\\n/g, "\n"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+
+    const doc = new GoogleSpreadsheet(SHEET_ID as string, serviceAccountAuth);
+    await doc.loadInfo();
+    console.log("Таблица загружена:", doc.title);
+
+    // Получаем и обрабатываем данные о продажах
     const salesData = await fetchSalesData();
-    await updateSheet(salesData);
+    await updateSheet(doc, salesData);
+
+    // Получаем и обрабатываем данные об остатках
+    const inventoryData = await fetchInventoryData(LOYVERSE_API_KEY as string);
+    await updateInventorySheet(doc, inventoryData);
+
     console.log("\nСкрипт успешно завершен");
   } catch (error) {
     console.error("Ошибка при обработке данных:", error);

@@ -254,11 +254,11 @@ export async function updateInventorySheet(
 ) {
   console.log("\nОбновляем лист с остатками...");
 
-  // Ищем или создаем лист "Остатки"
-  let sheet = doc.sheetsByTitle["Остатки"];
+  // Ищем или создаем лист "Stock"
+  let sheet = doc.sheetsByTitle["Stock"];
   if (!sheet) {
-    sheet = await doc.addSheet({ title: "Остатки" });
-    console.log("Создан новый лист 'Остатки'");
+    sheet = await doc.addSheet({ title: "Stock" });
+    console.log("Создан новый лист 'Stock'");
   }
 
   // Очищаем лист

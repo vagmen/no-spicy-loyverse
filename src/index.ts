@@ -8,6 +8,8 @@ import { fetchInventoryData, updateInventorySheet } from "./inventory";
 interface LoyverseReceipt {
   receipt_date: string;
   receipt_number: string;
+  receipt_type: string;
+  cancelled_at: string | null;
   line_items: Array<{
     item_id: string;
     item_name: string;
@@ -32,6 +34,7 @@ interface LoyverseReceipt {
 interface SheetRow {
   "Дата и время": string;
   "ID чека": string;
+  Статус: string;
   Артикул: string;
   Товар: string;
   Категория: string;
@@ -133,11 +136,10 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
 
   // Получаем даты для фильтрации
   const now = new Date();
-  const lastMonth = new Date(now);
-  lastMonth.setMonth(now.getMonth() - 1);
+  const startOf2025 = new Date("2025-01-01T00:00:00Z");
 
   // Форматируем даты в ISO формат
-  const startDate = lastMonth.toISOString();
+  const startDate = startOf2025.toISOString();
   const endDate = now.toISOString();
 
   console.log("Период запроса:", { с: startDate, по: endDate });
@@ -163,8 +165,6 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
         headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
       });
 
-      console.log("Статус ответа:", response.status);
-
       if (!response.ok) {
         throw new Error(`Ошибка API Loyverse: ${response.statusText}`);
       }
@@ -179,19 +179,7 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
         });
       });
 
-      // Добавляем отладочный вывод для первого чека на первой странице
-      if (pageCount === 1 && receipts.length > 0) {
-        console.log("\nПример данных первого чека:");
-        console.log(JSON.stringify(receipts[0], null, 2));
-        console.log("\nПример первой позиции:");
-        console.log(JSON.stringify(receipts[0].line_items[0], null, 2));
-        console.log("\nПроверка поля категории:");
-        console.log("Category field:", receipts[0].line_items[0].category);
-        console.log("Full item data:", receipts[0].line_items[0]);
-      }
-
       cursor = data.cursor;
-
       console.log(`Получено ${receipts.length} чеков на странице ${pageCount}`);
       allReceipts = allReceipts.concat(receipts);
 
@@ -222,27 +210,17 @@ async function updateSheet(
       0
     )}`
   );
-  console.log(
-    `Общая сумма: ${salesData.reduce(
-      (sum, receipt) =>
-        sum +
-        receipt.line_items.reduce(
-          (itemSum, item) => itemSum + item.total_money.amount,
-          0
-        ),
-      0
-    )}`
-  );
 
   console.log("\nНачинаем запись в Google Sheets...");
   try {
-    const sheet = doc.sheetsByIndex[0];
-    console.log("Лист:", sheet.title);
+    // Ищем лист "Sales"
+    const sheet = doc.sheetsByTitle["Sales"];
+    if (!sheet) {
+      throw new Error('Лист "Sales" не найден');
+    }
 
     // Очищаем лист перед записью новых данных
-    console.log("Очищаем существующие данные...");
     await sheet.clear();
-    console.log("Лист очищен");
 
     // Определяем заголовки столбцов
     const headers = [
@@ -258,11 +236,11 @@ async function updateSheet(
       "Способ оплаты",
       "Сотрудник",
       "Клиент",
+      "Статус",
     ];
 
     // Устанавливаем заголовки
     await sheet.setHeaderRow(headers);
-    console.log("Заголовки установлены");
 
     const rows: SheetRow[] = salesData.flatMap((receipt) =>
       receipt.line_items.map((item) => {
@@ -282,6 +260,7 @@ async function updateSheet(
           "Способ оплаты": receipt.payments.map((p) => p.name).join(", "),
           Сотрудник: receipt.employee_name || "Не указан",
           Клиент: receipt.customer_phone_number || "-",
+          Статус: receipt.cancelled_at || "-",
         };
       })
     );

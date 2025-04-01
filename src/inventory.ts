@@ -42,6 +42,7 @@ interface LoyverseItem {
   sold_by_weight: boolean;
   is_composite: boolean;
   use_production: boolean;
+  primary_supplier_id: string | null;
   variants: LoyverseVariant[];
   created_at: string;
   updated_at: string;
@@ -52,6 +53,17 @@ interface LoyverseCategory {
   handle: string;
   name: string;
   color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface LoyverseSupplier {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +83,7 @@ interface InventoryItem {
   reference: string | null;
   trackStock: boolean;
   lastUpdated: string;
+  supplier: string | null;
 }
 
 export async function fetchInventoryData(
@@ -78,6 +91,28 @@ export async function fetchInventoryData(
 ): Promise<InventoryItem[]> {
   console.log("Получаем данные об остатках...");
   const inventory: InventoryItem[] = [];
+
+  // Получаем список поставщиков
+  console.log("Загрузка списка поставщиков...");
+  const suppliersResponse = await fetch(
+    "https://api.loyverse.com/v1.0/suppliers",
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }
+  );
+
+  if (!suppliersResponse.ok) {
+    throw new Error(
+      `Ошибка получения списка поставщиков: ${suppliersResponse.statusText}`
+    );
+  }
+
+  const suppliersData = await suppliersResponse.json();
+  const suppliers = new Map<string, string>();
+  suppliersData.suppliers.forEach((supplier: LoyverseSupplier) => {
+    suppliers.set(supplier.id, supplier.name);
+  });
+  console.log(`Загружено ${suppliers.size} поставщиков`);
 
   // Получаем список магазинов
   console.log("Загрузка списка магазинов...");
@@ -231,6 +266,10 @@ export async function fetchInventoryData(
             reference: variant.reference_variant_id,
             trackStock: item.track_stock,
             lastUpdated: item.updated_at,
+            supplier: item.primary_supplier_id
+              ? suppliers.get(item.primary_supplier_id) ||
+                item.primary_supplier_id
+              : null,
           });
         });
       } else {
@@ -273,16 +312,18 @@ export async function updateInventorySheet(
     "Категория",
     "Остаток",
     "Себестоимость",
-    "Цена продажи",
-    "Сумма по себестоимости",
-    "Сумма по цене продажи",
+    "Цена",
+    "Общая себестоимость",
+    "Общая цена",
     "В наличии",
-    "Штрихкод",
-    "Внешний ID",
+    "Штрих-код",
+    "Референс",
     "Учет остатков",
     "Последнее обновление",
+    "Поставщик",
   ];
 
+  // Устанавливаем заголовки
   await sheet.setHeaderRow(headers);
   console.log("Заголовки установлены");
 
@@ -294,17 +335,45 @@ export async function updateInventorySheet(
     Категория: item.categoryName,
     Остаток: item.stock,
     Себестоимость: item.cost,
-    "Цена продажи": item.price,
-    "Сумма по себестоимости": item.totalCost,
-    "Сумма по цене продажи": item.totalPrice,
+    Цена: item.price,
+    "Общая себестоимость": item.totalCost,
+    "Общая цена": item.totalPrice,
     "В наличии": item.inStock ? "Да" : "Нет",
-    Штрихкод: item.barcode || "-",
-    "Внешний ID": item.reference || "-",
+    "Штрих-код": item.barcode || "-",
+    Референс: item.reference || "-",
     "Учет остатков": item.trackStock ? "Да" : "Нет",
     "Последнее обновление": new Date(item.lastUpdated).toLocaleString("ru-RU"),
+    Поставщик: item.supplier || "-",
   }));
 
   // Записываем данные
   await sheet.addRows(rows);
-  console.log(`Записано ${rows.length} строк в лист остатков`);
+  console.log(`Записано ${rows.length} строк`);
+
+  // Форматируем числовые колонки
+  const numericColumns = [
+    "Остаток",
+    "Себестоимость",
+    "Цена",
+    "Общая себестоимость",
+    "Общая цена",
+  ];
+  for (const column of numericColumns) {
+    const columnIndex = headers.indexOf(column);
+    if (columnIndex !== -1) {
+      await sheet.loadCells({
+        startRowIndex: 1,
+        endRowIndex: rows.length + 1,
+        startColumnIndex: columnIndex,
+        endColumnIndex: columnIndex + 1,
+      });
+
+      for (let i = 1; i <= rows.length; i++) {
+        const cell = sheet.getCell(i, columnIndex);
+        cell.numberFormat = { type: "NUMBER", pattern: "#,##0.00" };
+      }
+    }
+  }
+
+  console.log("Форматирование завершено");
 }

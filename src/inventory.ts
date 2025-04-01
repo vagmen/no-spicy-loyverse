@@ -1,4 +1,3 @@
-import { JWT } from "google-auth-library";
 import { GoogleSpreadsheet } from "google-spreadsheet";
 
 interface LoyverseStore {

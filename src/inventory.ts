@@ -1,4 +1,5 @@
 import { GoogleSpreadsheet } from "google-spreadsheet";
+import { isWithinSchedule, getNextRunTime, formatDateTime } from "./schedule";
 
 interface LoyverseStore {
   id: string;
@@ -88,6 +89,17 @@ interface InventoryItem {
 export async function fetchInventoryData(
   apiKey: string
 ): Promise<InventoryItem[]> {
+  // Проверяем, находимся ли мы в рабочем времени
+  if (!isWithinSchedule()) {
+    const nextRun = getNextRunTime();
+    console.log(
+      `Вне рабочего времени. Следующий запуск обновления остатков: ${formatDateTime(
+        nextRun
+      )}`
+    );
+    return [];
+  }
+
   console.log("Получаем данные об остатках...");
   const inventory: InventoryItem[] = [];
 

@@ -15,12 +15,14 @@
     "dotenv": "^16.4.5",
     "google-auth-library": "^9.6.3",
     "google-spreadsheet": "^4.1.1",
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "luxon": "^3.4.4"
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
     "@vercel/node": "^3.0.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "@types/luxon": "^3.3.3"
   }
 }

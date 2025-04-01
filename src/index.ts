@@ -3,7 +3,9 @@ require("dotenv").config();
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const { JWT } = require("google-auth-library");
 const fetch = require("node-fetch");
+import { DateTime } from "luxon";
 import { fetchInventoryData, updateInventorySheet } from "./inventory";
+import { isWithinSchedule, getNextRunTime, formatDateTime } from "./schedule";
 
 interface LoyverseReceipt {
   receipt_date: string;
@@ -276,7 +278,21 @@ async function updateSheet(
 
 async function main() {
   try {
+    // Проверяем, находимся ли мы в рабочем времени
+    if (!isWithinSchedule()) {
+      const nextRun = getNextRunTime();
+      console.log(
+        `Вне рабочего времени. Следующий запуск: ${formatDateTime(nextRun)}`
+      );
+      return;
+    }
+
     console.log("Запуск скрипта...");
+    console.log(
+      `Текущее время (Бангкок): ${formatDateTime(
+        DateTime.now().setZone("Asia/Bangkok")
+      )}`
+    );
 
     // Инициализируем подключение к Google Sheets
     const serviceAccountAuth = new JWT({
@@ -298,9 +314,15 @@ async function main() {
     await updateInventorySheet(doc, inventoryData);
 
     console.log("\nСкрипт успешно завершен");
+    console.log(`Следующий запуск: ${formatDateTime(getNextRunTime())}`);
   } catch (error) {
     console.error("Ошибка при обработке данных:", error);
-    throw error;
+    // В случае ошибки пробуем еще раз через 5 минут
+    const retryTime = DateTime.now().plus({ minutes: 5 });
+    console.log(
+      `Повторная попытка через 5 минут: ${formatDateTime(retryTime)}`
+    );
+    setTimeout(main, 5 * 60 * 1000);
   }
 }
 

@@ -361,6 +361,11 @@ export async function updateInventorySheet(
   await sheet.addRows(rows);
   console.log(`Записано ${rows.length} строк`);
 
+  if (rows.length === 0) {
+    console.log("Нет данных для записи в остатки");
+    return;
+  }
+
   // Форматируем числовые колонки
   const numericColumns = [
     "Остаток",

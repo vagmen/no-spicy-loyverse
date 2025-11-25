@@ -1,5 +1,6 @@
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { isWithinSchedule, getNextRunTime, formatDateTime } from "./schedule";
+import { AuthorizationError } from "./errors";
 
 interface LoyverseStore {
   id: string;
@@ -113,6 +114,11 @@ export async function fetchInventoryData(
   );
 
   if (!suppliersResponse.ok) {
+    if (suppliersResponse.status === 401) {
+      throw new AuthorizationError(
+        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${suppliersResponse.status}`
+      );
+    }
     throw new Error(
       `Ошибка получения списка поставщиков: ${suppliersResponse.statusText}`
     );
@@ -132,6 +138,11 @@ export async function fetchInventoryData(
   });
 
   if (!storesResponse.ok) {
+    if (storesResponse.status === 401) {
+      throw new AuthorizationError(
+        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${storesResponse.status}`
+      );
+    }
     throw new Error(
       `Ошибка получения списка магазинов: ${storesResponse.statusText}`
     );
@@ -152,6 +163,11 @@ export async function fetchInventoryData(
   );
 
   if (!categoriesResponse.ok) {
+    if (categoriesResponse.status === 401) {
+      throw new AuthorizationError(
+        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${categoriesResponse.status}`
+      );
+    }
     throw new Error(
       `Ошибка получения категорий: ${categoriesResponse.statusText}`
     );
@@ -181,6 +197,11 @@ export async function fetchInventoryData(
       });
 
       if (!stockResponse.ok) {
+        if (stockResponse.status === 401) {
+          throw new AuthorizationError(
+            `Ошибка авторизации: неверный или истекший API ключ. Статус: ${stockResponse.status}`
+          );
+        }
         throw new Error(
           `Ошибка получения остатков для магазина ${store.name}: ${stockResponse.statusText}`
         );
@@ -232,6 +253,11 @@ export async function fetchInventoryData(
     });
 
     if (!itemsResponse.ok) {
+      if (itemsResponse.status === 401) {
+        throw new AuthorizationError(
+          `Ошибка авторизации: неверный или истекший API ключ. Статус: ${itemsResponse.status}`
+        );
+      }
       throw new Error(`Ошибка получения товаров: ${itemsResponse.statusText}`);
     }
 

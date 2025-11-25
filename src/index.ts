@@ -6,6 +6,7 @@ const fetch = require("node-fetch");
 import { DateTime } from "luxon";
 import { fetchInventoryData, updateInventorySheet } from "./inventory";
 import { isWithinSchedule, getNextRunTime, formatDateTime } from "./schedule";
+import { AuthorizationError } from "./errors";
 
 interface LoyverseReceipt {
   receipt_date: string;
@@ -89,6 +90,12 @@ async function fetchItemsAndCategories() {
   );
 
   if (!categoriesResponse.ok) {
+    // Проверяем на ошибку авторизации
+    if (categoriesResponse.status === 401) {
+      throw new AuthorizationError(
+        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${categoriesResponse.status}`
+      );
+    }
     throw new Error(
       `Ошибка получения категорий: ${categoriesResponse.statusText}`
     );
@@ -115,6 +122,12 @@ async function fetchItemsAndCategories() {
     });
 
     if (!itemsResponse.ok) {
+      // Проверяем на ошибку авторизации
+      if (itemsResponse.status === 401) {
+        throw new AuthorizationError(
+          `Ошибка авторизации: неверный или истекший API ключ. Статус: ${itemsResponse.status}`
+        );
+      }
       throw new Error(`Ошибка получения товаров: ${itemsResponse.statusText}`);
     }
 
@@ -168,6 +181,12 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
       });
 
       if (!response.ok) {
+        // Проверяем на ошибку авторизации
+        if (response.status === 401) {
+          throw new AuthorizationError(
+            `Ошибка авторизации: неверный или истекший API ключ. Статус: ${response.status}`
+          );
+        }
         throw new Error(`Ошибка API Loyverse: ${response.statusText}`);
       }
 
@@ -276,8 +295,15 @@ async function updateSheet(
   }
 }
 
+// Счетчик попыток для отслеживания повторных запусков
+let retryCount = 0;
+const MAX_RETRIES = 3; // Максимальное количество попыток для некритических ошибок
+
 async function main() {
   try {
+    // Сбрасываем счетчик при успешном запуске
+    retryCount = 0;
+
     // Проверяем, находимся ли мы в рабочем времени
     if (!isWithinSchedule()) {
       const nextRun = getNextRunTime();
@@ -317,10 +343,27 @@ async function main() {
     console.log(`Следующий запуск: ${formatDateTime(getNextRunTime())}`);
   } catch (error) {
     console.error("Ошибка при обработке данных:", error);
-    // В случае ошибки пробуем еще раз через 5 минут
+
+    // Проверяем, является ли ошибка ошибкой авторизации
+    if (error instanceof AuthorizationError || (error as Error).message.includes("Unauthorized") || (error as Error).message.includes("авторизации")) {
+      console.error("\n❌ КРИТИЧЕСКАЯ ОШИБКА: Проблема с авторизацией в Loyverse API");
+      console.error("Проверьте правильность API ключа в переменных окружения");
+      console.error("Скрипт остановлен. Исправьте проблему и перезапустите вручную.");
+      process.exit(1); // Останавливаем выполнение при ошибке авторизации
+    }
+
+    // Для других ошибок проверяем количество попыток
+    retryCount++;
+    if (retryCount >= MAX_RETRIES) {
+      console.error(`\n❌ Превышено максимальное количество попыток (${MAX_RETRIES})`);
+      console.error("Скрипт остановлен. Проверьте логи и исправьте проблему.");
+      process.exit(1);
+    }
+
+    // В случае некритической ошибки пробуем еще раз через 5 минут
     const retryTime = DateTime.now().plus({ minutes: 5 });
     console.log(
-      `Повторная попытка через 5 минут: ${formatDateTime(retryTime)}`
+      `Повторная попытка ${retryCount}/${MAX_RETRIES} через 5 минут: ${formatDateTime(retryTime)}`
     );
     setTimeout(main, 5 * 60 * 1000);
   }

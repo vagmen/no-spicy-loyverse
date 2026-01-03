@@ -360,9 +360,11 @@ export async function updateInventorySheet(
     "Поставщик",
   ];
 
-  // Устанавливаем заголовки
+  // Устанавливаем заголовки   
   await sheet.setHeaderRow(headers);
   console.log("Заголовки установлены");
+
+  
 
   // Подготавливаем данные для записи
   const rows = inventory.map((item) => ({

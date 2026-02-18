@@ -5,7 +5,7 @@ const { JWT } = require("google-auth-library");
 const fetch = require("node-fetch");
 import { DateTime } from "luxon";
 import { fetchInventoryData, updateInventorySheet } from "./inventory";
-import { isWithinSchedule, getNextRunTime, formatDateTime } from "./schedule";
+import { formatDateTime } from "./schedule";
 import { AuthorizationError } from "./errors";
 
 interface LoyverseReceipt {
@@ -149,12 +149,13 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
   // Получаем информацию о товарах и их категориях
   const itemCategories = await fetchItemsAndCategories();
 
-  // Получаем даты для фильтрации
+  // Получаем даты для фильтрации — последние 3 месяца
   const now = new Date();
-  const startOf2025 = new Date("2025-01-01T00:00:00Z");
+  const threeMonthsAgo = new Date(now);
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
   // Форматируем даты в ISO формат
-  const startDate = startOf2025.toISOString();
+  const startDate = threeMonthsAgo.toISOString();
   const endDate = now.toISOString();
 
   console.log("Период запроса:", { с: startDate, по: endDate });
@@ -304,15 +305,6 @@ async function main() {
     // Сбрасываем счетчик при успешном запуске
     retryCount = 0;
 
-    // Проверяем, находимся ли мы в рабочем времени
-    if (!isWithinSchedule()) {
-      const nextRun = getNextRunTime();
-      console.log(
-        `Вне рабочего времени. Следующий запуск: ${formatDateTime(nextRun)}`
-      );
-      return;
-    }
-
     console.log("Запуск скрипта...");
     console.log(
       `Текущее время (Бангкок): ${formatDateTime(
@@ -340,7 +332,6 @@ async function main() {
     await updateInventorySheet(doc, inventoryData);
 
     console.log("\nСкрипт успешно завершен");
-    console.log(`Следующий запуск: ${formatDateTime(getNextRunTime())}`);
   } catch (error) {
     console.error("Ошибка при обработке данных:", error);
 

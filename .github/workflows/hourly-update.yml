@@ -2,7 +2,7 @@ name: Hourly Data Update
 
 on:
   schedule:
-    - cron: "0 * * * *" # Каждый час в :00 минут
+    - cron: "0 6-18 * * *" # Каждый час с 13:00 до 01:00 по Бангкоку (UTC+7)
   workflow_dispatch: # Для ручного запуска
 
 jobs:

@@ -1,5 +1,4 @@
 import { GoogleSpreadsheet } from "google-spreadsheet";
-import { isWithinSchedule, getNextRunTime, formatDateTime } from "./schedule";
 import { AuthorizationError } from "./errors";
 
 interface LoyverseStore {
@@ -88,19 +87,8 @@ interface InventoryItem {
 }
 
 export async function fetchInventoryData(
-  apiKey: string
+  apiKey: string,
 ): Promise<InventoryItem[]> {
-  // Проверяем, находимся ли мы в рабочем времени
-  if (!isWithinSchedule()) {
-    const nextRun = getNextRunTime();
-    console.log(
-      `Вне рабочего времени. Следующий запуск обновления остатков: ${formatDateTime(
-        nextRun
-      )}`
-    );
-    return [];
-  }
-
   console.log("Получаем данные об остатках...");
   const inventory: InventoryItem[] = [];
 
@@ -110,17 +98,17 @@ export async function fetchInventoryData(
     "https://api.loyverse.com/v1.0/suppliers",
     {
       headers: { Authorization: `Bearer ${apiKey}` },
-    }
+    },
   );
 
   if (!suppliersResponse.ok) {
     if (suppliersResponse.status === 401) {
       throw new AuthorizationError(
-        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${suppliersResponse.status}`
+        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${suppliersResponse.status}`,
       );
     }
     throw new Error(
-      `Ошибка получения списка поставщиков: ${suppliersResponse.statusText}`
+      `Ошибка получения списка поставщиков: ${suppliersResponse.statusText}`,
     );
   }
 
@@ -140,11 +128,11 @@ export async function fetchInventoryData(
   if (!storesResponse.ok) {
     if (storesResponse.status === 401) {
       throw new AuthorizationError(
-        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${storesResponse.status}`
+        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${storesResponse.status}`,
       );
     }
     throw new Error(
-      `Ошибка получения списка магазинов: ${storesResponse.statusText}`
+      `Ошибка получения списка магазинов: ${storesResponse.statusText}`,
     );
   }
 
@@ -159,17 +147,17 @@ export async function fetchInventoryData(
     "https://api.loyverse.com/v1.0/categories",
     {
       headers: { Authorization: `Bearer ${apiKey}` },
-    }
+    },
   );
 
   if (!categoriesResponse.ok) {
     if (categoriesResponse.status === 401) {
       throw new AuthorizationError(
-        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${categoriesResponse.status}`
+        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${categoriesResponse.status}`,
       );
     }
     throw new Error(
-      `Ошибка получения категорий: ${categoriesResponse.statusText}`
+      `Ошибка получения категорий: ${categoriesResponse.statusText}`,
     );
   }
 
@@ -199,11 +187,11 @@ export async function fetchInventoryData(
       if (!stockResponse.ok) {
         if (stockResponse.status === 401) {
           throw new AuthorizationError(
-            `Ошибка авторизации: неверный или истекший API ключ. Статус: ${stockResponse.status}`
+            `Ошибка авторизации: неверный или истекший API ключ. Статус: ${stockResponse.status}`,
           );
         }
         throw new Error(
-          `Ошибка получения остатков для магазина ${store.name}: ${stockResponse.statusText}`
+          `Ошибка получения остатков для магазина ${store.name}: ${stockResponse.statusText}`,
         );
       }
 
@@ -230,7 +218,7 @@ export async function fetchInventoryData(
       console.log(
         `Загружено ${
           stockData.inventory_levels?.length || 0
-        } остатков для магазина ${store.name}`
+        } остатков для магазина ${store.name}`,
       );
     } while (stockCursor);
   }
@@ -255,7 +243,7 @@ export async function fetchInventoryData(
     if (!itemsResponse.ok) {
       if (itemsResponse.status === 401) {
         throw new AuthorizationError(
-          `Ошибка авторизации: неверный или истекший API ключ. Статус: ${itemsResponse.status}`
+          `Ошибка авторизации: неверный или истекший API ключ. Статус: ${itemsResponse.status}`,
         );
       }
       throw new Error(`Ошибка получения товаров: ${itemsResponse.statusText}`);
@@ -316,7 +304,7 @@ export async function fetchInventoryData(
 
     cursor = data.cursor;
     console.log(
-      `Обработано ${data.items.length} товаров на странице ${pageCount}`
+      `Обработано ${data.items.length} товаров на странице ${pageCount}`,
     );
   } while (cursor);
 
@@ -326,7 +314,7 @@ export async function fetchInventoryData(
 
 export async function updateInventorySheet(
   doc: GoogleSpreadsheet,
-  inventory: InventoryItem[]
+  inventory: InventoryItem[],
 ) {
   console.log("\nОбновляем лист с остатками...");
 
@@ -360,11 +348,9 @@ export async function updateInventorySheet(
     "Поставщик",
   ];
 
-  // Устанавливаем заголовки   
+  // Устанавливаем заголовки
   await sheet.setHeaderRow(headers);
   console.log("Заголовки установлены");
-
-  
 
   // Подготавливаем данные для записи
   const rows = inventory.map((item) => ({

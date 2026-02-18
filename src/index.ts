@@ -7,6 +7,7 @@ import { DateTime } from "luxon";
 import { fetchInventoryData, updateInventorySheet } from "./inventory";
 import { formatDateTime } from "./schedule";
 import { AuthorizationError } from "./errors";
+import { RunLogger } from "./logging";
 
 interface LoyverseReceipt {
   receipt_date: string;
@@ -301,6 +302,9 @@ let retryCount = 0;
 const MAX_RETRIES = 3; // Максимальное количество попыток для некритических ошибок
 
 async function main() {
+  const logger = new RunLogger();
+  let doc: any = null;
+
   try {
     // Сбрасываем счетчик при успешном запуске
     retryCount = 0;
@@ -319,7 +323,7 @@ async function main() {
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
 
-    const doc = new GoogleSpreadsheet(SHEET_ID as string, serviceAccountAuth);
+    doc = new GoogleSpreadsheet(SHEET_ID as string, serviceAccountAuth);
     await doc.loadInfo();
     console.log("Таблица загружена:", doc.title);
 
@@ -327,20 +331,45 @@ async function main() {
     const salesData = await fetchSalesData();
     await updateSheet(doc, salesData);
 
+    // Сохраняем статистику продаж для лога
+    logger.salesCount = salesData.length;
+    logger.salesItemsCount = salesData.reduce(
+      (sum, receipt) => sum + receipt.line_items.length,
+      0
+    );
+
+    // Сохраняем период
+    const now = new Date();
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    logger.periodFrom = threeMonthsAgo.toLocaleDateString("ru-RU");
+    logger.periodTo = now.toLocaleDateString("ru-RU");
+
     // Получаем и обрабатываем данные об остатках
     const inventoryData = await fetchInventoryData(LOYVERSE_API_KEY as string);
     await updateInventorySheet(doc, inventoryData);
 
+    // Сохраняем статистику остатков
+    logger.inventoryCount = inventoryData.length;
+
+    // Записываем лог успеха
+    await logger.logSuccess(doc);
+
     console.log("\nСкрипт успешно завершен");
   } catch (error) {
     console.error("Ошибка при обработке данных:", error);
+
+    // Пытаемся записать лог ошибки (если doc доступен)
+    if (doc) {
+      await logger.logError(doc, error as Error);
+    }
 
     // Проверяем, является ли ошибка ошибкой авторизации
     if (error instanceof AuthorizationError || (error as Error).message.includes("Unauthorized") || (error as Error).message.includes("авторизации")) {
       console.error("\n❌ КРИТИЧЕСКАЯ ОШИБКА: Проблема с авторизацией в Loyverse API");
       console.error("Проверьте правильность API ключа в переменных окружения");
       console.error("Скрипт остановлен. Исправьте проблему и перезапустите вручную.");
-      process.exit(1); // Останавливаем выполнение при ошибке авторизации
+      process.exit(1);
     }
 
     // Для других ошибок проверяем количество попыток

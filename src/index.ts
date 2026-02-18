@@ -300,6 +300,24 @@ async function updateSheet(
 let retryCount = 0;
 const MAX_RETRIES = 3; // Максимальное количество попыток для некритических ошибок
 
+/** Пытается записать ошибку в таблицу, если doc ещё не был создан или при необработанном исключении */
+async function tryLogErrorToSheet(error: unknown): Promise<void> {
+  try {
+    if (!SHEET_ID || !GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) return;
+    const serviceAccountAuth = new JWT({
+      email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: (GOOGLE_PRIVATE_KEY as string).replace(/\\n/g, "\n"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+    const doc = new GoogleSpreadsheet(SHEET_ID as string, serviceAccountAuth);
+    await doc.loadInfo();
+    const logger = new RunLogger();
+    await logger.logError(doc, error instanceof Error ? error : new Error(String(error)));
+  } catch (e) {
+    console.error("Не удалось записать ошибку в таблицу:", e);
+  }
+}
+
 async function main() {
   const logger = new RunLogger();
   let doc: any = null;
@@ -358,9 +376,11 @@ async function main() {
   } catch (error) {
     console.error("Ошибка при обработке данных:", error);
 
-    // Пытаемся записать лог ошибки (если doc доступен)
+    // Пытаемся записать лог ошибки в таблицу (создаём doc при необходимости)
     if (doc) {
       await logger.logError(doc, error as Error);
+    } else {
+      await tryLogErrorToSheet(error);
     }
 
     // Проверяем, является ли ошибка ошибкой авторизации
@@ -391,7 +411,22 @@ async function main() {
 // Экспортируем main для использования в API endpoint
 export { main };
 
+// Записываем необработанные ошибки в таблицу перед выходом
+function setupGlobalErrorHandlers(): void {
+  const handle = (err: unknown) => {
+    console.error(err);
+    tryLogErrorToSheet(err).finally(() => process.exit(1));
+  };
+  process.on("unhandledRejection", handle);
+  process.on("uncaughtException", handle);
+}
+
 // Запускаем main() если скрипт запущен напрямую
 if (require.main === module) {
-  main().catch(console.error);
+  setupGlobalErrorHandlers();
+  main().catch(async (err) => {
+    console.error(err);
+    await tryLogErrorToSheet(err);
+    process.exit(1);
+  });
 }

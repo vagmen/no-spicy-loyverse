@@ -2,7 +2,6 @@ require("dotenv").config();
 
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const { JWT } = require("google-auth-library");
-const fetch = require("node-fetch");
 import { DateTime } from "luxon";
 import { fetchInventoryData, updateInventorySheet } from "./inventory";
 import { formatDateTime } from "./schedule";

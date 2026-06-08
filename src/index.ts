@@ -7,6 +7,7 @@ import { fetchInventoryData, updateInventorySheet } from "./inventory";
 import { formatDateTime } from "./schedule";
 import { AuthorizationError } from "./errors";
 import { RunLogger } from "./logging";
+import { fetchLoyverseJson } from "./loyverse";
 
 interface LoyverseReceipt {
   receipt_date: string;
@@ -62,6 +63,20 @@ interface LoyverseCategory {
   name: string;
 }
 
+interface LoyverseCategoriesResponse {
+  categories: LoyverseCategory[];
+}
+
+interface LoyverseItemsResponse {
+  items: LoyverseItem[];
+  cursor?: string | null;
+}
+
+interface LoyverseReceiptsResponse {
+  receipts: LoyverseReceipt[];
+  cursor?: string | null;
+}
+
 const SHEET_ID = process.env.SHEET_ID;
 const LOYVERSE_API_KEY = process.env.LOYVERSE_API_KEY;
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -82,26 +97,11 @@ async function fetchItemsAndCategories() {
   console.log("Получаем информацию о товарах и категориях...");
 
   // Получаем категории
-  const categoriesResponse = await fetch(
-    "https://api.loyverse.com/v1.0/categories",
-    {
-      headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
-    }
-  );
-
-  if (!categoriesResponse.ok) {
-    // Проверяем на ошибку авторизации
-    if (categoriesResponse.status === 401) {
-      throw new AuthorizationError(
-        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${categoriesResponse.status}`
-      );
-    }
-    throw new Error(
-      `Ошибка получения категорий: ${categoriesResponse.statusText}`
-    );
-  }
-
-  const categoriesData = await categoriesResponse.json();
+  const categoriesData = await fetchLoyverseJson<LoyverseCategoriesResponse>({
+    apiKey: LOYVERSE_API_KEY as string,
+    context: "категории",
+    url: "https://api.loyverse.com/v1.0/categories",
+  });
   const categories = new Map<string, string>();
   categoriesData.categories.forEach((category: LoyverseCategory) => {
     categories.set(category.id, category.name);
@@ -117,27 +117,17 @@ async function fetchItemsAndCategories() {
       url.searchParams.append("cursor", cursor);
     }
 
-    const itemsResponse = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
+    const itemsData = await fetchLoyverseJson<LoyverseItemsResponse>({
+      apiKey: LOYVERSE_API_KEY as string,
+      context: "товары",
+      url,
     });
-
-    if (!itemsResponse.ok) {
-      // Проверяем на ошибку авторизации
-      if (itemsResponse.status === 401) {
-        throw new AuthorizationError(
-          `Ошибка авторизации: неверный или истекший API ключ. Статус: ${itemsResponse.status}`
-        );
-      }
-      throw new Error(`Ошибка получения товаров: ${itemsResponse.statusText}`);
-    }
-
-    const itemsData = await itemsResponse.json();
     itemsData.items.forEach((item: LoyverseItem) => {
       const categoryName = categories.get(item.category_id) || "Без категории";
       items.set(item.id, categoryName);
     });
 
-    cursor = itemsData.cursor;
+    cursor = itemsData.cursor ?? null;
   } while (cursor);
 
   return items;
@@ -177,21 +167,11 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
         url.searchParams.append("cursor", cursor);
       }
 
-      const response = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${LOYVERSE_API_KEY}` },
+      const data = await fetchLoyverseJson<LoyverseReceiptsResponse>({
+        apiKey: LOYVERSE_API_KEY as string,
+        context: `чеки, страница ${pageCount}`,
+        url,
       });
-
-      if (!response.ok) {
-        // Проверяем на ошибку авторизации
-        if (response.status === 401) {
-          throw new AuthorizationError(
-            `Ошибка авторизации: неверный или истекший API ключ. Статус: ${response.status}`
-          );
-        }
-        throw new Error(`Ошибка API Loyverse: ${response.statusText}`);
-      }
-
-      const data = await response.json();
       const receipts = data.receipts as LoyverseReceipt[];
 
       // Добавляем категории к чекам
@@ -201,7 +181,7 @@ async function fetchSalesData(): Promise<LoyverseReceipt[]> {
         });
       });
 
-      cursor = data.cursor;
+      cursor = data.cursor ?? null;
       console.log(`Получено ${receipts.length} чеков на странице ${pageCount}`);
       allReceipts = allReceipts.concat(receipts);
 
@@ -296,8 +276,6 @@ async function updateSheet(
   }
 }
 
-// Счетчик попыток для отслеживания повторных запусков
-let retryCount = 0;
 const MAX_RETRIES = 3; // Максимальное количество попыток для некритических ошибок
 
 /** Пытается записать ошибку в таблицу, если doc ещё не был создан или при необработанном исключении */
@@ -318,14 +296,11 @@ async function tryLogErrorToSheet(error: unknown): Promise<void> {
   }
 }
 
-async function main() {
+async function main(retryCount = 0) {
   const logger = new RunLogger();
   let doc: any = null;
 
   try {
-    // Сбрасываем счетчик при успешном запуске
-    retryCount = 0;
-
     console.log("Запуск скрипта...");
     console.log(
       `Текущее время (Бангкок): ${formatDateTime(
@@ -392,8 +367,8 @@ async function main() {
     }
 
     // Для других ошибок проверяем количество попыток
-    retryCount++;
-    if (retryCount >= MAX_RETRIES) {
+    const nextRetryCount = retryCount + 1;
+    if (nextRetryCount >= MAX_RETRIES) {
       console.error(`\n❌ Превышено максимальное количество попыток (${MAX_RETRIES})`);
       console.error("Скрипт остановлен. Проверьте логи и исправьте проблему.");
       process.exit(1);
@@ -402,9 +377,9 @@ async function main() {
     // В случае некритической ошибки пробуем еще раз через 5 минут
     const retryTime = DateTime.now().plus({ minutes: 5 });
     console.log(
-      `Повторная попытка ${retryCount}/${MAX_RETRIES} через 5 минут: ${formatDateTime(retryTime)}`
+      `Повторная попытка ${nextRetryCount}/${MAX_RETRIES} через 5 минут: ${formatDateTime(retryTime)}`
     );
-    setTimeout(main, 5 * 60 * 1000);
+    setTimeout(() => main(nextRetryCount), 5 * 60 * 1000);
   }
 }
 

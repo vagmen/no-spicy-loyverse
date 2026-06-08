@@ -1,5 +1,5 @@
 import { GoogleSpreadsheet } from "google-spreadsheet";
-import { AuthorizationError } from "./errors";
+import { fetchLoyverseJson } from "./loyverse";
 
 interface LoyverseStore {
   id: string;
@@ -68,6 +68,36 @@ interface LoyverseSupplier {
   updated_at: string;
 }
 
+interface LoyverseStoreInfo {
+  id: string;
+  name: string;
+}
+
+interface LoyverseSuppliersResponse {
+  suppliers: LoyverseSupplier[];
+}
+
+interface LoyverseStoresResponse {
+  stores: LoyverseStoreInfo[];
+}
+
+interface LoyverseCategoriesResponse {
+  categories: LoyverseCategory[];
+}
+
+interface LoyverseInventoryResponse {
+  inventory_levels?: Array<{
+    variant_id: string;
+    in_stock: number;
+  }>;
+  cursor?: string | null;
+}
+
+interface LoyverseItemsResponse {
+  items: LoyverseItem[];
+  cursor?: string | null;
+}
+
 interface InventoryItem {
   sku: string;
   itemName: string;
@@ -94,25 +124,11 @@ export async function fetchInventoryData(
 
   // Получаем список поставщиков
   console.log("Загрузка списка поставщиков...");
-  const suppliersResponse = await fetch(
-    "https://api.loyverse.com/v1.0/suppliers",
-    {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    },
-  );
-
-  if (!suppliersResponse.ok) {
-    if (suppliersResponse.status === 401) {
-      throw new AuthorizationError(
-        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${suppliersResponse.status}`,
-      );
-    }
-    throw new Error(
-      `Ошибка получения списка поставщиков: ${suppliersResponse.statusText}`,
-    );
-  }
-
-  const suppliersData = await suppliersResponse.json();
+  const suppliersData = await fetchLoyverseJson<LoyverseSuppliersResponse>({
+    apiKey,
+    context: "поставщики",
+    url: "https://api.loyverse.com/v1.0/suppliers",
+  });
   const suppliers = new Map<string, string>();
   suppliersData.suppliers.forEach((supplier: LoyverseSupplier) => {
     suppliers.set(supplier.id, supplier.name);
@@ -121,47 +137,22 @@ export async function fetchInventoryData(
 
   // Получаем список магазинов
   console.log("Загрузка списка магазинов...");
-  const storesResponse = await fetch("https://api.loyverse.com/v1.0/stores", {
-    headers: { Authorization: `Bearer ${apiKey}` },
+  const storesData = await fetchLoyverseJson<LoyverseStoresResponse>({
+    apiKey,
+    context: "магазины",
+    url: "https://api.loyverse.com/v1.0/stores",
   });
-
-  if (!storesResponse.ok) {
-    if (storesResponse.status === 401) {
-      throw new AuthorizationError(
-        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${storesResponse.status}`,
-      );
-    }
-    throw new Error(
-      `Ошибка получения списка магазинов: ${storesResponse.statusText}`,
-    );
-  }
-
-  const storesData = await storesResponse.json();
   const stores = storesData.stores;
   console.log(`Загружено ${stores.length} магазинов`);
 
   // Получаем категории
   console.log("\nЗагрузка категорий...");
   const categories = new Map<string, string>();
-  const categoriesResponse = await fetch(
-    "https://api.loyverse.com/v1.0/categories",
-    {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    },
-  );
-
-  if (!categoriesResponse.ok) {
-    if (categoriesResponse.status === 401) {
-      throw new AuthorizationError(
-        `Ошибка авторизации: неверный или истекший API ключ. Статус: ${categoriesResponse.status}`,
-      );
-    }
-    throw new Error(
-      `Ошибка получения категорий: ${categoriesResponse.statusText}`,
-    );
-  }
-
-  const categoriesData = await categoriesResponse.json();
+  const categoriesData = await fetchLoyverseJson<LoyverseCategoriesResponse>({
+    apiKey,
+    context: "категории",
+    url: "https://api.loyverse.com/v1.0/categories",
+  });
   categoriesData.categories.forEach((category: LoyverseCategory) => {
     categories.set(category.id, category.name);
   });
@@ -180,22 +171,11 @@ export async function fetchInventoryData(
         stockUrl.searchParams.append("cursor", stockCursor);
       }
 
-      const stockResponse = await fetch(stockUrl.toString(), {
-        headers: { Authorization: `Bearer ${apiKey}` },
+      const stockData = await fetchLoyverseJson<LoyverseInventoryResponse>({
+        apiKey,
+        context: `остатки для магазина ${store.name}`,
+        url: stockUrl,
       });
-
-      if (!stockResponse.ok) {
-        if (stockResponse.status === 401) {
-          throw new AuthorizationError(
-            `Ошибка авторизации: неверный или истекший API ключ. Статус: ${stockResponse.status}`,
-          );
-        }
-        throw new Error(
-          `Ошибка получения остатков для магазина ${store.name}: ${stockResponse.statusText}`,
-        );
-      }
-
-      const stockData = await stockResponse.json();
 
       // Добавляем отладочный вывод для первого магазина на первой странице
       if (store === stores[0] && !stockCursor) {
@@ -214,7 +194,7 @@ export async function fetchInventoryData(
         stocks.set(item.variant_id, item.in_stock);
       });
 
-      stockCursor = stockData.cursor;
+      stockCursor = stockData.cursor ?? null;
       console.log(
         `Загружено ${
           stockData.inventory_levels?.length || 0
@@ -236,20 +216,11 @@ export async function fetchInventoryData(
       url.searchParams.append("cursor", cursor);
     }
 
-    const itemsResponse = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    const data = await fetchLoyverseJson<LoyverseItemsResponse>({
+      apiKey,
+      context: `товары остатков, страница ${pageCount}`,
+      url,
     });
-
-    if (!itemsResponse.ok) {
-      if (itemsResponse.status === 401) {
-        throw new AuthorizationError(
-          `Ошибка авторизации: неверный или истекший API ключ. Статус: ${itemsResponse.status}`,
-        );
-      }
-      throw new Error(`Ошибка получения товаров: ${itemsResponse.statusText}`);
-    }
-
-    const data = await itemsResponse.json();
 
     // Добавляем отладочный вывод для первого товара
     if (pageCount === 1 && data.items.length > 0) {
@@ -302,7 +273,7 @@ export async function fetchInventoryData(
       }
     });
 
-    cursor = data.cursor;
+    cursor = data.cursor ?? null;
     console.log(
       `Обработано ${data.items.length} товаров на странице ${pageCount}`,
     );

@@ -21,8 +21,8 @@
     "luxon": "^3.7.2"
   },
   "devDependencies": {
-    "@types/luxon": "^3.7.5",
-    "@types/node": "^25.9.5",
+    "@types/luxon": "^3.7.6",
+    "@types/node": "^24.19.4",
     "@vercel/node": "^5.10.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
